@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type PetType = "duck" | "cat" | "bear";
@@ -18,6 +18,13 @@ interface GameState {
   isVIP: boolean;
   totalCheckIns: number;
   achievements: string[];
+}
+
+interface BobaPhoto {
+  id: string;
+  date: string;
+  dataUrl: string;
+  timestamp: number;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -99,6 +106,8 @@ const GLOBAL_CSS = `
   @keyframes popStar  { 0% { transform: scale(0) rotate(0deg); opacity:1; } 100% { transform: scale(2.5) rotate(200deg); opacity:0; } }
   @keyframes heartbeat{ 0%,100%{transform:scale(1);} 14%{transform:scale(1.18);} 28%{transform:scale(1);} 42%{transform:scale(1.18);} }
   @keyframes shimmer  { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes scaleIn  { from { transform: scale(0.88) translateY(16px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+  @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
 
   .pet-float  { animation: float 3s ease-in-out infinite; }
   .pet-bounce { animation: bounce 0.55s ease-in-out; }
@@ -106,6 +115,8 @@ const GLOBAL_CSS = `
   .fade-down  { animation: fadeDown 0.3s ease-out; }
   .slide-up   { animation: slideUp 0.3s ease-out; }
   .heartbeat  { animation: heartbeat 1.5s ease infinite; }
+  .scale-in   { animation: scaleIn 0.28s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .fade-in    { animation: fadeIn 0.2s ease-out; }
 
   .boba-btn {
     position: relative; overflow: hidden;
@@ -125,6 +136,25 @@ const GLOBAL_CSS = `
     transform: scale(1.05) translateY(-6px);
     box-shadow: 0 16px 40px rgba(0,0,0,0.5);
   }
+
+  .photo-thumb {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    cursor: pointer;
+  }
+  .photo-thumb:hover {
+    transform: scale(1.04);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+
+  .cam-btn {
+    transition: transform 0.15s ease, background 0.2s, border-color 0.2s;
+  }
+  .cam-btn:hover {
+    transform: translateY(-2px);
+    background: rgba(167,139,250,0.2) !important;
+    border-color: rgba(167,139,250,0.5) !important;
+  }
+  .cam-btn:active { transform: scale(0.95); }
 `;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -147,6 +177,162 @@ function StatCard({ icon, value, label, color }: { icon: string; value: string |
       <div style={{ fontSize: 26 }}>{icon}</div>
       <div style={{ fontSize: 22, fontWeight: 800, color: color ?? C.text, marginTop: 2 }}>{value}</div>
       <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+// ─── Image resize helper ──────────────────────────────────────────────────────
+function resizeImage(file: File, maxPx = 900): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxPx || height > maxPx) {
+        if (width > height) { height = Math.round((height / width) * maxPx); width = maxPx; }
+        else { width = Math.round((width / height) * maxPx); height = maxPx; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    };
+    img.src = url;
+  });
+}
+
+// ─── Photo Modal ──────────────────────────────────────────────────────────────
+function PhotoModal({ onClose, onPhoto }: { onClose: () => void; onPhoto: (dataUrl: string) => void }) {
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await resizeImage(file);
+    onPhoto(dataUrl);
+  };
+
+  return (
+    <div
+      className="fade-in"
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 300,
+        background: "rgba(4,2,15,0.82)", backdropFilter: "blur(8px)",
+        display: "flex", alignItems: "flex-end", justifyContent: "center",
+        padding: "0 12px 12px",
+      }}
+    >
+      <div
+        className="scale-in"
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 400,
+          background: "linear-gradient(180deg, #221448 0%, #100d28 100%)",
+          borderRadius: 26, border: "1px solid rgba(167,139,250,0.35)",
+          padding: "28px 22px 22px",
+          boxShadow: "0 -4px 60px rgba(124,58,237,0.35), 0 0 0 1px rgba(255,255,255,0.04)",
+        }}
+      >
+        {/* Handle bar */}
+        <div style={{ width: 40, height: 4, background: "rgba(167,139,250,0.3)", borderRadius: 2, margin: "0 auto 22px" }} />
+
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontSize: 44, marginBottom: 8, filter: "drop-shadow(0 0 16px rgba(167,139,250,0.5))" }}>📸</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#f0e6ff", letterSpacing: -0.3 }}>Add a Boba Photo</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 5 }}>Capture your boba moment! ✨</div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button
+            onClick={() => cameraRef.current?.click()}
+            className="boba-btn"
+            style={{
+              padding: "15px 0", borderRadius: 15, border: "none",
+              background: "linear-gradient(135deg, #7c3aed, #db2777)",
+              color: "white", fontSize: 15, fontWeight: 800, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
+              boxShadow: "0 4px 20px rgba(124,58,237,0.4)",
+            }}
+          >
+            <span style={{ fontSize: 20 }}>📷</span> Take Photo
+          </button>
+
+          <button
+            onClick={() => galleryRef.current?.click()}
+            className="boba-btn"
+            style={{
+              padding: "15px 0", borderRadius: 15,
+              border: "1px solid rgba(167,139,250,0.35)",
+              background: "rgba(167,139,250,0.1)",
+              color: C.text, fontSize: 15, fontWeight: 700, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 9,
+            }}
+          >
+            <span style={{ fontSize: 20 }}>🖼️</span> Choose from Gallery
+          </button>
+
+          <button
+            onClick={onClose}
+            style={{
+              padding: "12px 0", borderRadius: 14, border: "none",
+              background: "transparent", color: C.muted,
+              fontSize: 13, cursor: "pointer", fontWeight: 600,
+              marginTop: 2,
+            }}
+          >
+            Skip for now
+          </button>
+        </div>
+
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
+        <input ref={galleryRef} type="file" accept="image/*" onChange={handleFile} style={{ display: "none" }} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Photo Lightbox ───────────────────────────────────────────────────────────
+function PhotoLightbox({ photo, onClose, onDelete }: { photo: BobaPhoto; onClose: () => void; onDelete: (id: string) => void }) {
+  return (
+    <div
+      className="fade-in"
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 400,
+        background: "rgba(4,2,15,0.95)", backdropFilter: "blur(12px)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div className="scale-in" onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, maxWidth: 400, width: "100%" }}>
+        <img
+          src={photo.dataUrl}
+          alt="Boba photo"
+          style={{
+            maxWidth: "100%", maxHeight: "65vh",
+            borderRadius: 22, objectFit: "contain",
+            boxShadow: "0 0 0 1px rgba(167,139,250,0.3), 0 20px 80px rgba(124,58,237,0.4), 0 0 100px rgba(0,0,0,0.8)",
+          }}
+        />
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 15, color: "#f0e6ff", fontWeight: 700 }}>🧋 {photo.date}</div>
+          <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Tap outside to close</div>
+        </div>
+        <button
+          onClick={() => { onDelete(photo.id); onClose(); }}
+          style={{
+            padding: "9px 22px", borderRadius: 12,
+            border: "1px solid rgba(239,68,68,0.3)",
+            background: "rgba(239,68,68,0.08)",
+            color: C.red, fontSize: 13, cursor: "pointer", fontWeight: 700,
+          }}
+        >
+          🗑️ Delete Photo
+        </button>
+      </div>
     </div>
   );
 }
@@ -224,6 +410,9 @@ export default function BobaPetGame() {
   const [bouncing, setBouncing] = useState(false);
   const [showStars, setShowStars] = useState(false);
   const [notif, setNotif] = useState<{ msg: string; type: "good" | "warn" | "epic" } | null>(null);
+  const [photos, setPhotos] = useState<BobaPhoto[]>([]);
+  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<BobaPhoto | null>(null);
 
   // Load save
   useEffect(() => {
@@ -239,6 +428,19 @@ export default function BobaPetGame() {
       try { localStorage.setItem("boba-pet-v1", JSON.stringify(game)); } catch {}
     }
   }, [game]);
+
+  // Load photos
+  useEffect(() => {
+    try {
+      const p = localStorage.getItem("boba-pet-photos");
+      if (p) setPhotos(JSON.parse(p));
+    } catch {}
+  }, []);
+
+  // Save photos
+  useEffect(() => {
+    try { localStorage.setItem("boba-pet-photos", JSON.stringify(photos)); } catch {}
+  }, [photos]);
 
   // Happiness decay: −1 every 5 minutes
   useEffect(() => {
@@ -256,6 +458,23 @@ export default function BobaPetGame() {
   const poke = () => {
     setBouncing(true);
     setTimeout(() => setBouncing(false), 600);
+  };
+
+  const addPhoto = (dataUrl: string) => {
+    const photo: BobaPhoto = {
+      id: Date.now().toString(),
+      date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      dataUrl,
+      timestamp: Date.now(),
+    };
+    setPhotos(prev => [photo, ...prev]);
+    setShowPhotoModal(false);
+    notify("📸 Boba photo saved!", "good");
+  };
+
+  const deletePhoto = (id: string) => {
+    setPhotos(prev => prev.filter(p => p.id !== id));
+    notify("Photo deleted", "warn");
   };
 
   // ── Check-in ──────────────────────────────────────────────────────────────
@@ -318,6 +537,8 @@ export default function BobaPetGame() {
       } else {
         notify(`🧋 +${xpGain} XP  ·  +${coinGain} 💰  ·  ${newStreak} day streak 🔥`, "good");
       }
+      // Prompt for photo after check-in
+      setTimeout(() => setShowPhotoModal(true), 400);
     }, 950);
   };
 
@@ -353,8 +574,12 @@ export default function BobaPetGame() {
   const resetGame = () => {
     if (!confirm("Reset all progress? This cannot be undone.")) return;
     setGame(DEFAULT_STATE);
+    setPhotos([]);
     setTab("home");
-    try { localStorage.removeItem("boba-pet-v1"); } catch {}
+    try {
+      localStorage.removeItem("boba-pet-v1");
+      localStorage.removeItem("boba-pet-photos");
+    } catch {}
   };
 
   // ── Guard: pet not chosen ─────────────────────────────────────────────────
@@ -371,6 +596,7 @@ export default function BobaPetGame() {
   const checkedToday= game.lastCheckIn === new Date().toDateString();
   const petFontSize = [60, 68, 80, 92, 108][game.stage] ?? 92;
   const hpColor     = game.happiness > 60 ? C.green : game.happiness > 30 ? C.gold : C.red;
+  const latestPhoto = photos[0] ?? null;
 
   const moodText =
     game.happiness > 80 ? "Absolutely vibing 🌟" :
@@ -511,23 +737,87 @@ export default function BobaPetGame() {
           {/* HOME */}
           {tab === "home" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <button
-                onClick={checkIn}
-                disabled={checkedToday || animating}
-                className="boba-btn"
-                style={{
-                  width: "100%", padding: "16px 0", borderRadius: 16, border: "none",
-                  background: checkedToday
-                    ? "rgba(255,255,255,0.05)"
-                    : "linear-gradient(135deg, #7c3aed, #db2777)",
-                  color: checkedToday ? C.muted : "white",
-                  fontSize: 16, fontWeight: 800, cursor: checkedToday ? "not-allowed" : "pointer",
-                  boxShadow: checkedToday ? "none" : "0 4px 24px rgba(124,58,237,0.45)",
-                  letterSpacing: 0.3,
-                }}
-              >
-                {animating ? "🧋 Sipping boba..." : checkedToday ? "✅ Checked In Today!" : "🧋 I Drank Boba!"}
-              </button>
+
+              {/* Check-in row + camera button */}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => setShowPhotoModal(true)}
+                  className="cam-btn"
+                  title="Add a boba photo 📸"
+                  style={{
+                    width: 56, height: 56, borderRadius: 16, flexShrink: 0,
+                    border: "1px solid rgba(167,139,250,0.3)",
+                    background: "rgba(167,139,250,0.08)",
+                    color: C.purple, fontSize: 22, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    position: "relative",
+                  }}
+                >
+                  📷
+                  {photos.length > 0 && (
+                    <span style={{
+                      position: "absolute", top: -5, right: -5,
+                      background: "linear-gradient(135deg,#7c3aed,#db2777)",
+                      color: "white", fontSize: 9, fontWeight: 800,
+                      borderRadius: 999, padding: "2px 5px", minWidth: 16,
+                      textAlign: "center", lineHeight: 1.4,
+                    }}>
+                      {photos.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={checkIn}
+                  disabled={checkedToday || animating}
+                  className="boba-btn"
+                  style={{
+                    flex: 1, height: 56, borderRadius: 16, border: "none",
+                    background: checkedToday
+                      ? "rgba(255,255,255,0.05)"
+                      : "linear-gradient(135deg, #7c3aed, #db2777)",
+                    color: checkedToday ? C.muted : "white",
+                    fontSize: 15, fontWeight: 800, cursor: checkedToday ? "not-allowed" : "pointer",
+                    boxShadow: checkedToday ? "none" : "0 4px 24px rgba(124,58,237,0.45)",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  {animating ? "🧋 Sipping boba..." : checkedToday ? "✅ Checked In Today!" : "🧋 I Drank Boba!"}
+                </button>
+              </div>
+
+              {/* Latest photo thumbnail */}
+              {latestPhoto && (
+                <div
+                  onClick={() => setSelectedPhoto(latestPhoto)}
+                  className="photo-thumb"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 12,
+                    background: "rgba(167,139,250,0.06)",
+                    border: "1px solid rgba(167,139,250,0.2)",
+                    borderRadius: 14, padding: "10px 12px",
+                  }}
+                >
+                  <img
+                    src={latestPhoto.dataUrl}
+                    alt="Latest boba"
+                    style={{
+                      width: 54, height: 54, borderRadius: 11,
+                      objectFit: "cover", flexShrink: 0,
+                      border: "2px solid rgba(167,139,250,0.35)",
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.text }}>Latest Sip 📸</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 3 }}>{latestPhoto.date}</div>
+                    <div style={{ fontSize: 11, color: C.purple, marginTop: 2 }}>
+                      {photos.length} photo{photos.length !== 1 ? "s" : ""} · tap to view
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 20, color: C.muted, flexShrink: 0 }}>›</div>
+                </div>
+              )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                 <StatCard icon="🔥" value={game.streak}         label="day streak" color={game.streak > 0 ? C.orange : C.muted} />
@@ -551,7 +841,7 @@ export default function BobaPetGame() {
               </div>
 
               <div style={{ textAlign: "center", fontSize: 11, color: C.muted }}>
-                💡 Tap your pet to poke it!
+                💡 Tap your pet to poke it! · 📷 Camera to add a photo
               </div>
             </div>
           )}
@@ -675,6 +965,81 @@ export default function BobaPetGame() {
           {/* STATS */}
           {tab === "stats" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* Boba Photo Gallery */}
+              {photos.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>
+                      📸 Boba Gallery
+                    </div>
+                    <div style={{ fontSize: 11, color: C.purple, fontWeight: 600 }}>
+                      {photos.length} photo{photos.length !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    {photos.map(photo => (
+                      <div
+                        key={photo.id}
+                        onClick={() => setSelectedPhoto(photo)}
+                        className="photo-thumb"
+                        style={{
+                          borderRadius: 13, overflow: "hidden",
+                          border: "1px solid rgba(167,139,250,0.2)",
+                          background: C.dim,
+                        }}
+                      >
+                        <img
+                          src={photo.dataUrl}
+                          alt="Boba"
+                          style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }}
+                        />
+                        <div style={{
+                          padding: "4px 6px",
+                          background: "linear-gradient(0deg, rgba(0,0,0,0.6) 0%, transparent 100%)",
+                          fontSize: 9, color: C.muted, textAlign: "center",
+                          marginTop: -20, position: "relative",
+                        }}>
+                          {photo.date}
+                        </div>
+                      </div>
+                    ))}
+                    {/* Add photo button in grid */}
+                    <div
+                      onClick={() => setShowPhotoModal(true)}
+                      className="photo-thumb"
+                      style={{
+                        borderRadius: 13, aspectRatio: "1",
+                        border: "1px dashed rgba(167,139,250,0.3)",
+                        background: "rgba(167,139,250,0.05)",
+                        display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center", gap: 4,
+                      }}
+                    >
+                      <span style={{ fontSize: 22 }}>📷</span>
+                      <span style={{ fontSize: 9, color: C.purple, fontWeight: 700 }}>Add</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={() => setShowPhotoModal(true)}
+                  className="photo-thumb"
+                  style={{
+                    borderRadius: 16, padding: "22px 14px",
+                    border: "1px dashed rgba(167,139,250,0.25)",
+                    background: "rgba(167,139,250,0.04)",
+                    display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: 8,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 36 }}>📸</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>No boba photos yet</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>Tap to add your first boba photo!</div>
+                </div>
+              )}
+
               <div style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>
                 🏆 Achievements ({game.achievements.length} / {ACHIEVEMENTS_DEF.length})
               </div>
@@ -706,6 +1071,7 @@ export default function BobaPetGame() {
                   { label: "Best streak",  val: `${game.streak} days`           },
                   { label: "Coins earned", val: game.coins                      },
                   { label: "Outfits",      val: `${game.unlockedOutfits.length} / ${OUTFITS.filter(o => !o.vipOnly).length}` },
+                  { label: "Boba photos",  val: photos.length                   },
                 ].map(r => (
                   <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
                     <span style={{ color: C.muted }}>{r.label}</span>
@@ -731,6 +1097,20 @@ export default function BobaPetGame() {
         </div>
 
       </div>
+
+      {/* Photo modal */}
+      {showPhotoModal && (
+        <PhotoModal onClose={() => setShowPhotoModal(false)} onPhoto={addPhoto} />
+      )}
+
+      {/* Photo lightbox */}
+      {selectedPhoto && (
+        <PhotoLightbox
+          photo={selectedPhoto}
+          onClose={() => setSelectedPhoto(null)}
+          onDelete={deletePhoto}
+        />
+      )}
     </div>
   );
 }
